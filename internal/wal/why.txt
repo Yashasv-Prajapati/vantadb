@@ -1,0 +1,8 @@
+Why to do Write Ahead Loggin(WAL)?
+
+In case the database engine or the machine crashes and the data was not stored or whatever action that was to be done(other than select) could be stored in a log file.
+
+This way we can guarantee updates to db, by writing to WAL log file, if our system or dbms crash or query crash, since we have WAL log, we can redo all the operations from a fixed point in the log file.
+We can schedule these updates to some job manager and it will do its work in the background continuously.
+
+Replay all the operations done on the database to see how it was changed over time.  
