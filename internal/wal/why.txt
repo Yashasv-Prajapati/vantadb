@@ -6,3 +6,43 @@ This way we can guarantee updates to db, by writing to WAL log file, if our syst
 We can schedule these updates to some job manager and it will do its work in the background continuously.
 
 Replay all the operations done on the database to see how it was changed over time.  
+
+
+
+package main
+
+import (
+	"fmt"
+	"vantadb/internal/fs"
+	"vantadb/internal/kv"
+	"vantadb/vdsk"
+)
+
+func main(){
+
+
+	vdsk.CreateVDSKStorageData()
+
+	disk, err := fs.Mount()
+
+	if err != nil{
+		fmt.Printf("could not read storage: %v", err)
+	}
+
+	kv.Init(disk)
+
+	check, err := kv.Set("abc", "hello")
+	if err != nil{
+		panic(err)
+	}
+
+	if !check {
+		fmt.Println("COULD NOT SET")
+	}
+	v, err := kv.Get("abcd")
+	if err != nil{
+		panic(err)
+	}
+	fmt.Println(v)
+
+}
