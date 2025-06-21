@@ -24,11 +24,24 @@ This is my personal project to learn about databases, and different aspects of i
 
 To run the project, you need to have Go installed on your machine. You can clone the repository and run the following commands:
 
+### Option 1: Install from source
 ```bash
 git clone https://github.com/Yashasv-Prajapati/vantadb.git
 cd vantadb
 go mod tidy
 go install .
+```
+
+### Option 2: Install directly (Recommended)
+```bash
+go install github.com/Yashasv-Prajapati/vantadb@latest
+```
+
+Then you can run the server using the following command:
+
+```bash
+vantadb init .vdsk
+vantadb serve --port 8080 -f .vdsk
 ```
 
 Then you can
