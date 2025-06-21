@@ -9,8 +9,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"vantadb/internal/fs"
-	"vantadb/internal/kv"
+	"github.com/Yashasv-Prajapati/vantadb/internal/fs"
+	"github.com/Yashasv-Prajapati/vantadb/internal/kv"
 
 	"github.com/chzyer/readline"
 	"github.com/spf13/cobra"
@@ -54,11 +54,13 @@ var serveCmd = &cobra.Command{
 				http.Error(w, "Invalid JSON", http.StatusBadRequest)
 				return
 			}
-			ok, err := kv.Set(payload.Key, payload.Value)
-			if err != nil || !ok {
-				http.Error(w, "Failed to set value", http.StatusInternalServerError)
+			_, err := kv.Set(payload.Key, payload.Value)
+			if err != nil {
+				errmsg := "Failed to set value: " + string(err.Error())
+				http.Error(w, errmsg, http.StatusInternalServerError)
 				return
 			}
+			// fmt.Println(msg)
 			w.WriteHeader(http.StatusOK)
 		})
 
@@ -114,17 +116,12 @@ var serveCmd = &cobra.Command{
 				}
 				key := parts[1]
 				value := parts[2]
-				check, err := kv.Set(key, value)
+				msg, err := kv.Set(key, value)
 				if err != nil {
 					fmt.Printf("could not set key value: %v\n", err)
 					continue
 				}
-				if !check {
-					fmt.Printf("failed to set key value")
-					continue
-				}
-				fmt.Println("OK")
-
+				fmt.Println(msg)
 			default:
 				fmt.Println("unknown command")
 			}

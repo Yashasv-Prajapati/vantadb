@@ -1,138 +1,133 @@
 package kv
 
 import (
+	"encoding/binary"
 	"fmt"
 	"strings"
-	"vantadb/internal/fs"
-
+	"sync"
+	"time"
+	"github.com/Yashasv-Prajapati/vantadb/internal/fs"
+	"github.com/Yashasv-Prajapati/vantadb/internal/wal"
 )
 
 var disk *fs.Disk
+var batchMode bool
+var batchMutex sync.RWMutex
+var lastFlush time.Time
 
 func Init(d *fs.Disk) {
 	disk = d
 }
 
-func Set(key string, value string) (bool, error) {
+// Enable batch mode - operations won't immediately flush to disk
+func EnableBatchMode() {
+	batchMutex.Lock()
+	defer batchMutex.Unlock()
+	batchMode = true
+}
 
-	keyBytes := [32]byte{}
-	copy(keyBytes[:], key)
+// Disable batch mode and flush all pending changes
+func DisableBatchMode() error {
+	batchMutex.Lock()
+	defer batchMutex.Unlock()
+	batchMode = false
+	return FlushToDisk()
+}
 
-	valueBytes := []byte(value)
-	valueSize := len(valueBytes)
-	pagesNeeded := (valueSize + fs.PAGE_SIZE - 1) / fs.PAGE_SIZE // ceil division
-
-	if pagesNeeded > 6 {
-		return false, fmt.Errorf("value too large, can't be accomodated in 6 pages") // can only allot 6 pages
+// Force flush all in-memory changes to disk
+func FlushToDisk() error {
+	// Write bitmap
+	if err := disk.WriteBitmapToDisk(); err != nil {
+		return err
 	}
 
-	// first we have to search if this key exists or not
-	for i := 0; i < len(disk.Inodes); i++ {
-		if strings.TrimRight(string(disk.Inodes[i].Key[:]), "\x00") == key { // key already exists - update
-			return updateExistingKey(i, keyBytes, valueBytes, valueSize, pagesNeeded)
+	// Write all inodes
+	for i, inode := range disk.Inodes {
+		if err := disk.WriteInodeToDisk(i, inode); err != nil {
+			return err
 		}
 	}
 
-	// does not exist, find empty place in array
-	for i := 0; i < len(disk.Inodes); i++ {
-		if disk.Inodes[i].InUse[0] == 0 { // not in use
-			return createNewKey(i, keyBytes, valueBytes, valueSize, pagesNeeded)
-		}
-	}
+	lastFlush = time.Now()
+	return nil
+}
 
-	return false, fmt.Errorf("empty space not found to insert key")
+// upserts key-value pair in db - key - max 32B value, max 6 pages = 3072B
+func Set(key string, value string) (string, error){
+	return setInternal(key, value, true)
 }
 
 func Get(key string) (string, error) {
 	// first we have to search if this key exists or not
-	for i := 0; i < len(disk.Inodes); i++ {
-		if strings.TrimRight(string(disk.Inodes[i].Key[:]), "\x00") == key { // key already exists - update
-			pageNumbers := disk.Inodes[i].PageNumbers
+	idx := searchKeyInInodes(key)
+	if idx == -1 { // key not found
+		return "", fmt.Errorf("key not found")
+	}
 
-			value := make([]byte, fs.PAGE_SIZE*len(pageNumbers)) // stores the value for corresponding key
-			offset := 0                                          // to read PAGE_SIZE chunk from each page
+	// else found the key
+	inode := disk.Inodes[idx]
+	pageNumbers := inode.PageNumbers
+	numPages := int(inode.NumberofPages[0])
+	if numPages == 0 {
+		return "", nil
+	}
 
-			for i := 0; i < len(pageNumbers); i++ {
-				pageData, err := disk.ReadPageFromDisk(int(pageNumbers[i]))
-				if err != nil {
-					return "", fmt.Errorf("could not read page from disk")
-				}
-				copy(value[offset:offset+fs.PAGE_SIZE], pageData[:])
-			}
-			return strings.TrimRight(string(value), "\x00"), nil
+	actualSize := binary.LittleEndian.Uint32(inode.Size[:])
+	value := make([]byte, actualSize) // stores the value for corresponding key
+
+	offset := 0 // to read PAGE_SIZE chunk from each page
+	for i := 0; i < numPages; i++ {
+		if pageNumbers[i] == 0 {
+			break // no more pages
 		}
-	}
-	return "", fmt.Errorf("key-value not found")
-}
-
-// func Del(key string) error {
-
-// }
-
-func updateExistingKey(inodeIndex int, keyBytes [32]byte, valueBytes []byte, valueSize int, pagesNeeded int) (bool, error) {
-	inode := disk.Inodes[inodeIndex]
-
-	// first we will free the pages from the bitmap
-	// basically we will set all those pages we have occupied free in the bitmap and search for new ones
-	for i := 0; i < int(inode.NumberofPages[0]); i++ {
-		if inode.PageNumbers[i] != 0 {
-			disk.Bitmap.FreePage(int(inode.PageNumbers[i]))
+		pageData, err := disk.ReadPageFromDisk(int(pageNumbers[i]))
+		if err != nil {
+			return "", fmt.Errorf("could not read page from disk")
 		}
-	}
 
-	return allocatePagesAndWriteData(inodeIndex, keyBytes, valueBytes, valueSize, pagesNeeded)
-
-}
-
-func createNewKey(inodeIndex int, keyBytes [32]byte, valueBytes []byte, valueSize, pagesNeeded int) (bool, error) {
-
-	disk.Inodes[inodeIndex].InUse[0] = 1
-	return allocatePagesAndWriteData(inodeIndex, keyBytes, valueBytes, valueSize, pagesNeeded)
-
-}
-
-func allocatePagesAndWriteData(inodeIndex int, keyBytes [32]byte, valueBytes []byte, valueSize, pagesNeeded int) (bool, error) {
-	inode := disk.Inodes[inodeIndex]
-
-	// set inode metadata
-	inode.Key = keyBytes
-	sizeBytes := [4]byte{} // size of the value it is holding - value corresponding to key
-	copy(sizeBytes[:], []byte{byte(valueSize), byte(valueSize >> 8), byte(valueSize >> 16), byte(valueSize >> 24)})
-	inode.Size = sizeBytes
-	inode.NumberofPages[0] = byte(pagesNeeded)
-
-	// ------- Now, time to allocate pages and write data
-	// find free pages
-	freePageNumbers := disk.Bitmap.FindFreePages(pagesNeeded)
-
-	if len(freePageNumbers) == 0 {
-		return false, fmt.Errorf("no free pages available")
-	}
-
-	dataOffset := 0
-	for i := 0; i < pagesNeeded; i++ {
-		// mark this page as allocated in bitmap - pageNumber
-		disk.Bitmap.AllocatePage(freePageNumbers[i])
-
-		inode.PageNumbers[i] = uint32(freePageNumbers[i])
-
-		// now fill the pages with data
-		pageData := [512]byte{}
 		bytesToCopy := fs.PAGE_SIZE
-		if dataOffset+bytesToCopy > len(valueBytes) {
-			bytesToCopy = len(valueBytes) - dataOffset
+		if offset+bytesToCopy > int(actualSize) {
+			bytesToCopy = int(actualSize) - offset
 		}
 
-		copy(pageData[:fs.PAGE_SIZE], valueBytes[dataOffset:dataOffset+bytesToCopy])
-		dataOffset += bytesToCopy
-		if err := disk.WritePageToDisk(freePageNumbers[i], pageData); err != nil {
-			return false, fmt.Errorf("failed to write to disk: %v", err)
+		copy(value[offset:offset+bytesToCopy], pageData[:bytesToCopy])
+		offset += bytesToCopy
+	}
+	return strings.TrimRight(string(value), "\x00"), nil
+
+}
+
+func Del(key string) string {
+	return delInternal(key, true)
+}
+
+
+func RecoverFromLogs() string {
+	EnableBatchMode()
+	defer DisableBatchMode()
+
+	wals := wal.GetAllWALRecords()
+	if len(wals) == 0 {
+		return "no records in WAL file"
+	}
+	for i := 0; i < len(wals); i++ {
+		record := wals[i]
+		fmt.Println("RECOVERING ", string(record.Key[:]), string(record.Value))
+		
+		key := strings.TrimRight(string(record.Key[:]), "\x00")
+		value := string(record.Value)
+
+		switch record.EntryType[0] {
+		case wal.SET_FLAT:
+			setInternal(key, value, false)
+			continue
+		case wal.DELETE_FLAG:
+			delInternal(key, false)
+			continue
+		default:
+			continue
 		}
 	}
 
-	disk.WriteBitmapToDisk()
-	disk.WriteInodeToDisk(inodeIndex, inode)
-
-	return true, nil
-
+	return "OK"
 }

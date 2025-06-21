@@ -1,3 +1,9 @@
 .vdsk
 vdb
 
+# log files
+wal.txt
+wal.log
+
+# env
+.env

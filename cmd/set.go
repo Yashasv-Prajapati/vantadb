@@ -5,36 +5,35 @@ package cmd
 
 import (
 	"fmt"
-	"vantadb/internal/fs"
-	"vantadb/internal/kv"
+	"github.com/Yashasv-Prajapati/vantadb/internal/fs"
+	"github.com/Yashasv-Prajapati/vantadb/internal/kv"
 
 	"github.com/spf13/cobra"
 )
 
 // setCmd represents the set command
 var setCmd = &cobra.Command{
-	Use:   "set [filename] [key] [value]",
+	Use:   "set [key] [value]",
 	Short: "Set a key to a value",
-	Args:  cobra.ExactArgs(3),
+	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		
-		filePath := args[0]
 		key := args[1]
 		value := args[2]
 
-		disk, err := fs.Mount(filePath)
+		disk, err := fs.Mount("")
 		if err != nil {
 			fmt.Println("Mount failed:", err)
 			return
 		}
 		kv.Init(disk)
 
-		ok, err := kv.Set(key, value)
-		if err != nil || !ok {
-			fmt.Println("Set failed:", err)
-		} else {
-			fmt.Println("OK")
-		}
+		fmt.Println(kv.Set(key, value))
+		// if err != nil || !ok {
+		// 	fmt.Println("Set failed:", err)
+		// } else {
+		// 	fmt.Println("OK")
+		// }
 	},
 }
 

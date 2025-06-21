@@ -5,7 +5,7 @@ package cmd
 
 import (
 	"fmt"
-	"vantadb/internal/fs"
+	"github.com/Yashasv-Prajapati/vantadb/internal/fs"
 
 	"github.com/spf13/cobra"
 )
@@ -15,8 +15,10 @@ var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initializes the vanta db database",
 	Long: `Initializes the vanta db database and file with your given name, if you don't give a name, it used .vdsk by default`,
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		err := fs.CreateVDSKStorageData()
+		filePath := args[0]
+		err := fs.CreateVDSKStorageData(filePath)
 		if err != nil {
 			fmt.Printf("Failed to create disk: %v\n", err)
 			return

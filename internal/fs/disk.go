@@ -49,7 +49,7 @@ func Mount(filePath string) (*Disk, error) {
 	// If file is empty or too small, initialize it
     if fileInfo.Size() < TOTAL_DISK_SIZE {
         // Initialize the disk storage
-        err = CreateVDSKStorageData()
+        err = CreateVDSKStorageData(filePath)
         if err != nil {
             file.Close()
             return nil, err
@@ -57,7 +57,7 @@ func Mount(filePath string) (*Disk, error) {
         
         // Reopen the file to read the initialized data
         file.Close()
-        file, err = os.OpenFile(VDSK_PATH, os.O_RDWR, 0644)
+        file, err = os.OpenFile(filePath, os.O_RDWR, 0644)
         if err != nil {
             return nil, err
         }
@@ -92,9 +92,12 @@ func Mount(filePath string) (*Disk, error) {
 	return disk, nil
 }
 
-func OpenVDSK() (*os.File, error) {
+func OpenVDSK(filePath string) (*os.File, error) {
+	if len(filePath) == 0 {
+		filePath = VDSK_PATH
+	}
 
-	file, err := os.Open(VDSK_PATH)
+	file, err := os.Open(filePath)
 	if errors.Is(err, os.ErrNotExist) {
 		file, err = os.Create(VDSK_PATH)
 		if err != nil {
@@ -115,7 +118,7 @@ func CloseVDSK(file *os.File) {
 	file.Close()
 }
 
-func CreateVDSKStorageData() error {
+func CreateVDSKStorageData(filePath string) error {
 
 	// init diskstorage object
 	diskStorage := make([]byte, TOTAL_DISK_SIZE)
@@ -135,28 +138,28 @@ func CreateVDSKStorageData() error {
 
 	// data pages - remaining space, no need to fill anything, already zeor due to make
 
-	return writeToDisk(diskStorage)
+	return writeToDisk(diskStorage, filePath)
 
 }
 
-func ReadVDSKStorage() ([]byte, error) {
-	diskStorage := make([]byte, TOTAL_DISK_SIZE)
+// func ReadVDSKStorage() ([]byte, error) {
+// 	diskStorage := make([]byte, TOTAL_DISK_SIZE)
 
-	file, err := OpenVDSK()
+// 	file, err := OpenVDSK()
 
-	if err != nil {
-		return nil, err
-	}
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	defer file.Close()
+// 	defer file.Close()
 
-	_, err = file.Read(diskStorage)
-	if err != nil {
-		return nil, err
-	}
+// 	_, err = file.Read(diskStorage)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return diskStorage, nil
-}
+// 	return diskStorage, nil
+// }
 
 /*
 Reads the disk file and returns all the data on the VDSK disk
@@ -244,8 +247,8 @@ func serializeBitmap(bm *Bitmap) []byte {
 	return data
 }
 
-func writeToDisk(data []byte) error {
-	file, err := OpenVDSK()
+func writeToDisk(data []byte, filePath string) error {
+	file, err := OpenVDSK(filePath)
 	if err != nil {
 		return err
 	}

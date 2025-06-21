@@ -5,22 +5,21 @@ package cmd
 
 import (
 	"fmt"
-	"vantadb/internal/fs"
-	"vantadb/internal/kv"
+	"github.com/Yashasv-Prajapati/vantadb/internal/fs"
+	"github.com/Yashasv-Prajapati/vantadb/internal/kv"
 
 	"github.com/spf13/cobra"
 )
 
 // getCmd represents the get command
 var getCmd = &cobra.Command{
-	Use:   "get [filename] [key]",
+	Use:   "get [key]",
 	Short: "Gets the value to a key",
-	Args:  cobra.ExactArgs(3),
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		filePath := args[0]
 		key := args[1]
 
-		disk, err := fs.Mount(filePath)
+		disk, err := fs.Mount("")
 		if err != nil {
 			fmt.Println("Mount failed:", err)
 			return

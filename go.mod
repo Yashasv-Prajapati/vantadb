@@ -1,4 +1,4 @@
-module vantadb
+module github.com/Yashasv-Prajapati/vantadb
 
 go 1.23.3
 
